@@ -1,3 +1,4 @@
+HTML
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -37,9 +38,39 @@
             box-shadow: 2px 0 5px rgba(0,0,0,0.1);
         }
 
+        /* 탭 메뉴 스타일 */
+        .tab-menu {
+            display: flex;
+            background-color: #e9ecef;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-weight: bold;
+            color: #495057;
+            text-align: center;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .tab-button:hover {
+            background-color: #dee2e6;
+        }
+
+        .tab-button.active {
+            background-color: #ffffff;
+            color: #191919;
+            border-bottom: 2px solid #fee500;
+        }
+
         /* 검색창 구역 */
         .search-box {
-            padding: 20px;
+            padding: 15px 20px;
             background-color: #ffffff;
             border-bottom: 1px solid #dee2e6;
         }
@@ -84,6 +115,12 @@
             border: 1px solid #e9ecef;
             border-radius: 4px;
             margin-bottom: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .place-item:hover {
+            background-color: #f1f3f5;
         }
 
         /* 오른쪽: 지도 영역 */
@@ -91,16 +128,86 @@
             flex: 1;
             height: 100%;
         }
+
+        /* 커스텀 오버레이(말풍선) 스타일 */
+        .custom-overlay {
+            position: relative;
+            bottom: 50px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            border-bottom: 2px solid #ddd;
+            background: #fff;
+            padding: 10px 15px;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .custom-overlay::after {
+            content: '';
+            position: absolute;
+            margin-left: -12px;
+            left: 50%;
+            bottom: -12px;
+            width: 22px;
+            height: 12px;
+            background: url('https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/vertexwhite.png');
+        }
+
+        .overlay-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 4px;
+            padding-right: 20px;
+        }
+
+        .overlay-phone {
+            color: #666;
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+
+        .overlay-link {
+            display: inline-block;
+            color: #2b58e2;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .overlay-link:hover {
+            text-decoration: underline;
+        }
+
+        .overlay-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            color: #999;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .overlay-close:hover {
+            color: #333;
+        }
     </style>
 </head>
 <body>
 
     <div class="main-container">
-        <!-- 왼쪽 사이드바 (검색 + 결과) -->
+        <!-- 왼쪽 사이드바 (탭 + 검색 + 결과) -->
         <div class="sidebar">
+            <!-- 탭 메뉴 추가 -->
+            <div class="tab-menu">
+                <button id="tabBookstore" class="tab-button active" onclick="switchTab('bookstore')">독립서점</button>
+                <button id="tabPublisher" class="tab-button" onclick="switchTab('publisher')">출판사</button>
+            </div>
+
             <div class="search-box">
                 <form class="search-form" onsubmit="searchPlaces(); return false;">
-                    <input type="text" id="keyword" class="search-input" placeholder="장소를 입력하세요 (예: 강남역맛집)" value="이태원 맛집">
+                    <input type="text" id="keyword" class="search-input" placeholder="지역이나 키워드를 입력하세요">
                     <button type="submit" class="search-button">검색</button>
                 </form>
             </div>
@@ -114,16 +221,19 @@
         <div id="map" class="map-container"></div>
     </div>
 
-    <!-- 카카오 지도 라이브러리 스크립트 (services 라이브러리 포함) -->
-    <!-- 지도가 완전히 로드된 후 실행되도록 autoload=false 설정을 추가했습니다. -->
+    <!-- 카카오 지도 라이브러리 스크립트 -->
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=9b337fd89d8eb3bbe8bf74a10b71d522&libraries=services&autoload=false"></script>
     
     <script>
         // 전역 변수 선언
         let map;
         let placeSearch;
+        let currentTab = 'bookstore'; // 현재 선택된 탭 ('bookstore' 또는 'publisher')
+        let markers = [];             // 지도에 표시된 마커들을 저장할 배열
+        let currentOverlay = null;    // 현재 열려있는 커스텀 오버레이 객체
+        let userLocationMarker = null;// 사용자 현재 위치 마커
 
-        // 카카오 스크립트가 완전히 로드된 후 실행되도록 보장하는 kakao.maps.load
+        // 카카오 스크립트가 완전히 로드된 후 실행
         kakao.maps.load(function() {
             initMap();
         });
@@ -132,8 +242,8 @@
         function initMap() {
             const mapContainer = document.getElementById('map');
             const mapOptions = {
-                center: new kakao.maps.LatLng(37.566826, 126.9786567), // 위치 권한 허용 전 기본 중심좌표 (서울시청)
-                level: 5 // 요구사항: 지도 확대 레벨 5
+                center: new kakao.maps.LatLng(37.566826, 126.9786567), // 기본 중심좌표 (서울시청)
+                level: 5 // 지도 확대 레벨 5
             };
 
             // 지도 생성
@@ -142,77 +252,206 @@
             // 장소 검색 객체 생성
             placeSearch = new kakao.maps.services.Places();
 
-            // 사용자의 현재 위치(HTML5 Geolocation) 가져오기
+            // 지도 클릭 시 현재 열려있는 오버레이 닫기
+            kakao.maps.event.addListener(map, 'click', function() {
+                closeOverlay();
+            });
+
+            // 사용자의 현재 위치 가져오기
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(position) {
-                    const currentLat = position.coords.latitude;  // 위도
-                    const currentLng = position.coords.longitude; // 경도
-                    
+                    const currentLat = position.coords.latitude;
+                    const currentLng = position.coords.longitude;
                     const currentPos = new kakao.maps.LatLng(currentLat, currentLng);
                     
-                    // 지도의 중심을 현재 위치로 이동
                     map.setCenter(currentPos);
                     
-                    // 현재 위치에 마커 하나 찍어주기
-                    const currentMarker = new kakao.maps.Marker({
+                    // 현재 위치 마커 생성
+                    userLocationMarker = new kakao.maps.Marker({
                         map: map,
                         position: currentPos
                     });
                     
+                    // 초기 검색 키워드 설정 (현재 위치 근처 검색 유도용)
+                    document.getElementById('keyword').value = "마포구";
+                    searchPlaces();
                 }, function(error) {
                     console.error("위치 정보를 가져오는 데 실패했습니다.", error);
-                    alert("위치 권한을 허용해주시면 현재 위치를 중심으로 지도가 표시됩니다.");
+                    // 실패 시 기본 위치 기준으로 첫 검색 실행
+                    document.getElementById('keyword').value = "이태원";
+                    searchPlaces();
                 });
             } else {
-                alert("이 브라우저에서는 위치 서비스(Geolocation)를 지원하지 않습니다.");
+                document.getElementById('keyword').value = "이태원";
+                searchPlaces();
+            }
+        }
+
+        // 탭을 전환하는 함수
+        function switchTab(tabType) {
+            if (currentTab === tabType) return;
+
+            currentTab = tabType;
+
+            // 탭 버튼 UI 스타일 토글
+            document.getElementById('tabBookstore').classList.toggle('active', tabType === 'bookstore');
+            document.getElementById('tabPublisher').classList.toggle('active', tabType === 'publisher');
+
+            // 기존 마커와 오버레이 모두 제거
+            clearMarkers();
+            closeOverlay();
+
+            // 새로운 탭 기준으로 장소 재검색
+            searchPlaces();
+        }
+
+        // 기존 마커들을 지도에서 지우는 함수
+        function clearMarkers() {
+            markers.forEach(function(marker) {
+                marker.setMap(null);
+            });
+            markers = [];
+        }
+
+        // 현재 열린 커스텀 오버레이를 닫는 함수
+        function closeOverlay() {
+            if (currentOverlay) {
+                currentOverlay.setMap(null);
+                currentOverlay = null;
             }
         }
 
         // 키워드 장소 검색을 실행하는 함수
         function searchPlaces() {
-            const keyword = document.getElementById('keyword').value;
+            const inputKeyword = document.getElementById('keyword').value.trim();
+            
+            // 사용자가 입력한 지역/명칭 뒤에 현재 탭에 맞는 타겟 키워드를 조합
+            let finalKeyword = inputKeyword;
+            if (currentTab === 'bookstore') {
+                finalKeyword += " 독립서점";
+            } else if (currentTab === 'publisher') {
+                finalKeyword += " 출판사";
+            }
 
-            if (!keyword.replace(/^\s+|\s+$/g, '')) {
-                alert('키워드를 입력해주세요!');
+            if (!inputKeyword) {
+                alert('검색어를 입력해주세요!');
                 return false;
             }
 
-            // 카카오 키워드 검색 서비스 호출
-            placeSearch.keywordSearch(keyword, placesSearchCB);
+            // CT1(문화시설) 카테고리 코드 제한을 걸고 키워드로 정밀 검색
+            placeSearch.keywordSearch(finalKeyword, placesSearchCB, {
+                category_group_code: 'CT1',
+                location: map.getCenter(), // 현재 지도 중심 주위 우선 검색
+                radius: 5000
+            });
         }
 
         // 장소검색이 완료됐을 때 호출되는 콜백함수
         function placesSearchCB(data, status, pagination) {
             if (status === kakao.maps.services.Status.OK) {
-                // 검색 성공 시 결과 리스트 표시 및 지도 마커 표시
                 displayPlaces(data);
             } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
-                alert('검색 결과가 존재하지 않습니다.');
+                // 특정 카테고리 제한으로 안 나올 경우를 대비해 카테고리 코드 없이 재시도하는 로직
+                retrySearchWithoutCategory();
             } else if (status === kakao.maps.services.Status.ERROR) {
                 alert('검색 결과 중 오류가 발생했습니다.');
             }
         }
 
-        // 검색 결과를 왼쪽 리스트에 보여주는 함수
+        // 카테고리 코드 제한 없이 검색을 재시도하는 예비 함수
+        function retrySearchWithoutCategory() {
+            const inputKeyword = document.getElementById('keyword').value.trim();
+            let finalKeyword = inputKeyword + (currentTab === 'bookstore' ? " 독립서점" : " 출판사");
+
+            placeSearch.keywordSearch(finalKeyword, function(data, status) {
+                if (status === kakao.maps.services.Status.OK) {
+                    displayPlaces(data);
+                } else {
+                    const listElement = document.getElementById('placesList');
+                    listElement.innerHTML = '<p style="color: #6c757d; text-align: center; margin-top: 20px;">검색 결과가 존재하지 않습니다.</p>';
+                    clearMarkers();
+                    closeOverlay();
+                }
+            });
+        }
+
+        // 검색 결과를 화면과 지도에 표시하는 함수
         function displayPlaces(places) {
             const listElement = document.getElementById('placesList');
+            const bounds = new kakao.maps.LatLngBounds();
             
-            // 기존 검색 결과 지우기
             listElement.innerHTML = '';
+            clearMarkers();
+            closeOverlay();
 
-            // 지도에 표시된 기존 마커들을 지우는 로직이나 새 마커를 찍는 코드를 여기에 확장할 수 있습니다.
-            // 여기서는 HTML/CSS 분할 레이아웃과 구동에 집중하여 리스트 표기 기본 기능만 구현했습니다.
-            places.forEach(function(place) {
+            places.forEach(function(place, index) {
+                const placePosition = new kakao.maps.LatLng(place.y, place.x);
+                
+                // 1. 지도에 마커 추가
+                const marker = new kakao.maps.Marker({
+                    position: placePosition,
+                    map: map
+                });
+                
+                markers.push(marker);
+                bounds.extend(placePosition);
+
+                // 마커 클릭 시 커스텀 오버레이 표시 이벤트 바인딩
+                kakao.maps.event.addListener(marker, 'click', function() {
+                    showOverlay(place, marker);
+                });
+
+                // 2. 왼쪽 리스트 엘리먼트 생성
                 const itemElement = document.createElement('div');
                 itemElement.className = 'place-item';
                 
+                const addressName = place.road_address_name ? place.road_address_name : place.address_name;
+                const phoneName = place.phone ? place.phone : '전화번호 없음';
+
                 itemElement.innerHTML = `
                     <h4 style="margin-bottom: 5px; color: #333;">${place.place_name}</h4>
-                    <p style="font-size: 12px; color: #666;">${place.road_address_name ? place.road_address_name : place.address_name}</p>
-                    <span style="font-size: 11px; color: #999;">${place.phone}</span>
+                    <p style="font-size: 12px; color: #666;">${addressName}</p>
+                    <span style="font-size: 11px; color: #999;">${phoneName}</span>
                 `;
                 
+                // 리스트 아이템 클릭 시 지도 중심 이동 및 오버레이 표시
+                itemElement.onclick = function() {
+                    map.setCenter(placePosition);
+                    showOverlay(place, marker);
+                };
+
                 listElement.appendChild(itemElement);
+            });
+
+            // 검색된 장소들이 모두 보이도록 지도 범위 조정
+            map.setBounds(bounds);
+        }
+
+        // 커스텀 오버레이(말풍선)를 생성하고 지도에 표시하는 함수
+        function showOverlay(place, marker) {
+            // 기존에 열려있는 오버레이 닫기
+            closeOverlay();
+
+            const phoneName = place.phone ? place.phone : '전화번호 없음';
+            
+            // 오버레이에 들어갈 HTML 컨텐츠 동적 생성
+            const content = document.createElement('div');
+            content.className = 'custom-overlay';
+            
+            content.innerHTML = `
+                <div class="overlay-close" onclick="closeOverlay()">X</div>
+                <div class="overlay-title">${place.place_name}</div>
+                <div class="overlay-phone">${phoneName}</div>
+                <a href="${place.place_url}" target="_blank" class="overlay-link">카카오맵에서 보기 →</a>
+            `;
+
+            // 커스텀 오버레이 객체 생성 및 지도 표시
+            currentOverlay = new kakao.maps.CustomOverlay({
+                content: content,
+                map: map,
+                position: marker.getPosition(),
+                xAnchor: 0.5,
+                yAnchor: 1.0
             });
         }
     </script>
